@@ -123,9 +123,13 @@ impl ClientConnectionBus {
             None => {
                 self.get_control_channel_tx();
                 if let Some(control_channel_tx) = self.control_channel_tx.as_ref() {
+                    for pending in self.pending_control_messages.drain(..) {
+                        let _ = control_channel_tx.send(pending);
+                    }
                     let _ = control_channel_tx.send(message);
                 } else {
-                    log::error!("Failed to send control message to client");
+                    log::warn!("Control channel not ready, buffering message");
+                    self.pending_control_messages.push(message);
                 }
             },
         }
@@ -186,6 +190,9 @@ impl ClientConnectionBus {
             .unwrap()
             .get_client_control_tx(&self.web_client_id)
         {
+            for pending in self.pending_control_messages.drain(..) {
+                let _ = control_channel_tx.send(pending);
+            }
             self.control_channel_tx = Some(control_channel_tx);
         }
     }

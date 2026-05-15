@@ -134,6 +134,7 @@ pub struct ClientConnectionBus {
     pub stdout_channel_tx: Option<UnboundedSender<String>>,
     pub control_channel_tx: Option<UnboundedSender<Message>>,
     pub web_client_id: String,
+    pub pending_control_messages: Vec<Message>,
 }
 
 impl ClientConnectionBus {
@@ -152,6 +153,7 @@ impl ClientConnectionBus {
             stdout_channel_tx,
             control_channel_tx,
             web_client_id,
+            pending_control_messages: Vec::new(),
         }
     }
 }
