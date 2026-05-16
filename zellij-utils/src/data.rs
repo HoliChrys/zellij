@@ -3177,7 +3177,7 @@ pub enum WebSharing {
 
 impl Default for WebSharing {
     fn default() -> Self {
-        Self::Off
+        Self::On
     }
 }
 
