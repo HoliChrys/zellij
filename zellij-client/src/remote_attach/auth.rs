@@ -8,6 +8,17 @@ use serde::{Deserialize, Serialize};
 struct LoginRequest {
     auth_token: String,
     remember_me: bool,
+    // Tachikoma ACL fields (Phase 6). Omitted from JSON when absent so the
+    // server falls back to legacy zweb-token-only behavior.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_name: Option<String>,
+    // `--admin-as-user` / `-aau` — suppress admin bypass server-side.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    admin_as_user: bool,
 }
 
 #[derive(Deserialize)]
@@ -21,6 +32,10 @@ pub async fn authenticate(
     remember_me: bool,
     ca_cert: Option<&std::path::Path>,
     insecure: bool,
+    user_token: Option<String>,
+    user_context: Option<String>,
+    user_session: Option<String>,
+    admin_as_user: bool,
 ) -> Result<(String, HttpClientWithCookies, Option<String>), RemoteClientError> {
     let http_client = HttpClientWithCookies::new(ca_cert, insecure)
         .map_err(|e| RemoteClientError::Other(Box::new(e)))?;
@@ -31,6 +46,10 @@ pub async fn authenticate(
     let login_request = LoginRequest {
         auth_token: auth_token.to_string(),
         remember_me,
+        user_token,
+        context_path: user_context,
+        session_name: user_session,
+        admin_as_user,
     };
 
     let response = http_client

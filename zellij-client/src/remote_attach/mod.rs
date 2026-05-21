@@ -40,6 +40,10 @@ pub fn attach_to_remote_session(
     forget: bool,
     ca_cert: Option<&std::path::Path>,
     insecure: bool,
+    user_token: Option<String>,
+    user_context: Option<String>,
+    user_session: Option<String>,
+    admin_as_user: bool,
 ) -> Result<WebSocketConnections, RemoteClientError> {
     // Extract server URL for token management
     let server_url = extract_server_url(remote_session_url)?;
@@ -74,6 +78,10 @@ pub fn attach_to_remote_session(
         remember,
         ca_cert,
         insecure,
+        user_token,
+        user_context,
+        user_session,
+        admin_as_user,
     )
 }
 
@@ -122,6 +130,10 @@ fn authenticate_with_retry(
     remember: bool,
     ca_cert: Option<&std::path::Path>,
     insecure: bool,
+    user_token: Option<String>,
+    user_context: Option<String>,
+    user_session: Option<String>,
+    admin_as_user: bool,
 ) -> Result<WebSocketConnections, RemoteClientError> {
     use dialoguer::{Confirm, Password};
 
@@ -140,6 +152,9 @@ fn authenticate_with_retry(
         };
 
         let ca_cert_owned = ca_cert.map(|p| p.to_path_buf());
+        let user_token_clone = user_token.clone();
+        let user_context_clone = user_context.clone();
+        let user_session_clone = user_session.clone();
         match runtime.block_on(async move {
             remote_attach(
                 remote_session_url,
@@ -147,6 +162,10 @@ fn authenticate_with_retry(
                 remember,
                 ca_cert_owned.as_deref(),
                 insecure,
+                user_token_clone,
+                user_context_clone,
+                user_session_clone,
+                admin_as_user,
             )
             .await
         }) {
@@ -199,11 +218,25 @@ async fn remote_attach(
     remember_me: bool,
     ca_cert: Option<&std::path::Path>,
     insecure: bool,
+    user_token: Option<String>,
+    user_context: Option<String>,
+    user_session: Option<String>,
+    admin_as_user: bool,
 ) -> Result<(websockets::WebSocketConnections, Option<String>), RemoteClientError> {
     let server_base_url = extract_server_url(server_url)?;
     let session_name = extract_session_name(server_url)?;
-    let (web_client_id, http_client, session_token) =
-        auth::authenticate(&server_base_url, auth_token, remember_me, ca_cert, insecure).await?;
+    let (web_client_id, http_client, session_token) = auth::authenticate(
+        &server_base_url,
+        auth_token,
+        remember_me,
+        ca_cert,
+        insecure,
+        user_token,
+        user_context,
+        user_session,
+        admin_as_user,
+    )
+    .await?;
     let connections = websockets::establish_websocket_connections(
         &web_client_id,
         &http_client,

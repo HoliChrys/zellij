@@ -260,6 +260,26 @@ pub struct WebCli {
         display_order = 16
     )]
     pub key: Option<PathBuf>,
+
+    /// Tachikoma API base URL for live ACL verification (e.g.,
+    /// http://127.0.0.1:8000). When set, web logins must include a user_token
+    /// validated against this API.
+    #[clap(long, value_parser, value_name = "URL", display_order = 50)]
+    pub tachikoma_api_url: Option<String>,
+
+    /// Require Tachikoma ACL verification on every login. When true and
+    /// --tachikoma-api-url is not set, logins are rejected.
+    #[clap(long, value_parser, default_value_t = false, display_order = 51)]
+    pub tachikoma_acl_required: bool,
+
+    /// Grace period in seconds during which a Tachikoma API outage will NOT
+    /// disconnect already-authenticated sessions. Default: 30.
+    #[clap(long, value_parser, default_value_t = 30u64, display_order = 52)]
+    pub tachikoma_acl_grace_seconds: u64,
+
+    /// X-Tsp-Bridge-Auth header value to send to the Tachikoma API. Optional.
+    #[clap(long, value_parser, value_name = "HEADER", display_order = 53)]
+    pub tachikoma_bridge_auth: Option<String>,
 }
 
 impl WebCli {
@@ -348,6 +368,30 @@ pub enum Sessions {
         /// Skip TLS certificate validation (DANGEROUS — development only)
         #[clap(long, value_parser)]
         insecure: bool,
+
+        /// Tachikoma ACL user token. Validated live by the web server against
+        /// the Tachikoma verify-acl-token endpoint. Required when the server
+        /// enforces ACL.
+        #[clap(long, value_parser, env = "TACHIKOMA_USER_TOKEN", value_name = "TOKEN")]
+        user_token: Option<String>,
+
+        /// Tachikoma context path (e.g., "tachikoma.parallele.vscode"). Used
+        /// to scope the ACL check.
+        #[clap(long, value_parser, env = "TACHIKOMA_CONTEXT_PATH", value_name = "CTX")]
+        user_context: Option<String>,
+
+        /// Zellij session name on the target. Used to scope the ACL check.
+        #[clap(long, value_parser, value_name = "NAME")]
+        user_session: Option<String>,
+
+        /// Admin-as-user. When the caller is an admin, suppress the
+        /// Tachikoma admin bypass so the per-context / per-session ACL
+        /// check applies as if the caller were a regular user. Lets an
+        /// admin validate the ACL flow end-to-end from a privileged
+        /// account.
+        #[clap(long = "admin-as-user", alias = "aau",
+               value_parser, default_value_t = false)]
+        admin_as_user: bool,
     },
 
     /// Watch a session (read-only)

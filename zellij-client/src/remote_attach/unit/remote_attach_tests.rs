@@ -422,6 +422,9 @@ mod tests {
                 forget,
                 None,
                 true, // insecure for tests
+                None, // user_token
+                None, // user_context
+                None, // user_session
             )
         })
         .await

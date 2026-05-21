@@ -139,8 +139,10 @@ fn dispatch_termwiz_event(
     }
 }
 
+use crate::web_client::acl_session_store::DisconnectEvent;
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use futures::{prelude::stream::SplitSink, SinkExt};
+use tokio::sync::broadcast;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_util::sync::CancellationToken;
 
@@ -149,6 +151,12 @@ pub fn render_to_client(
     mut client_channel_tx: SplitSink<WebSocket, Message>,
     cancellation_token: CancellationToken,
     should_not_reconnect: Arc<AtomicBool>,
+    // Phase 5 — ACL revoke. When the session_token_hash on a broadcast
+    // event matches our own, write a 4001 close frame with the supplied
+    // reason and exit. Both args are `None` when the ACL store is not
+    // configured (no Tachikoma user_token at startup).
+    mut acl_revoke_rx: Option<broadcast::Receiver<DisconnectEvent>>,
+    session_token_hash: Option<String>,
 ) {
     tokio::spawn(async move {
         loop {
@@ -173,6 +181,38 @@ pub fn render_to_client(
                         break;
                     }
                     break;
+                }
+                // Phase 5 — ACL revoke. Park forever if no ACL store was
+                // configured so this arm is inert; otherwise filter by
+                // session_token_hash and emit a 4001 close with the
+                // upstream reason.
+                event = async {
+                    if let Some(rx) = acl_revoke_rx.as_mut() {
+                        rx.recv().await
+                    } else {
+                        std::future::pending().await
+                    }
+                } => {
+                    if let Ok(disconnect_event) = event {
+                        if Some(&disconnect_event.session_token_hash)
+                            == session_token_hash.as_ref()
+                        {
+                            let close_frame = CloseFrame {
+                                code: 4001u16,
+                                reason: format!(
+                                    "acl_revoked: {}",
+                                    disconnect_event.reason
+                                )
+                                .into(),
+                            };
+                            let _ = client_channel_tx
+                                .send(Message::Close(Some(close_frame)))
+                                .await;
+                            break;
+                        }
+                        // Event was for another session — ignore.
+                    }
+                    // Err(Lagged) / Err(Closed) — loop and keep listening.
                 }
                 result = stdout_channel_rx.recv() => {
                     match result {

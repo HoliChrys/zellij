@@ -16,6 +16,7 @@ use crate::web_client::control_message::{
     WebClientToWebServerControlMessage, WebClientToWebServerControlMessagePayload,
     WebServerToWebClientControlMessage,
 };
+use crate::web_client::types::AclConfig;
 use crate::web_client::ClientOsApiFactory;
 use zellij_utils::{
     data::Palette,
@@ -89,6 +90,7 @@ mod web_client_tests {
             Some(client_os_api_factory),
             addr.ip(),
             port,
+            AclConfig::default(),
         ));
 
         wait_for_server(port, Duration::from_secs(5))
@@ -150,6 +152,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -221,6 +224,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -288,6 +292,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -501,6 +506,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -682,6 +688,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -732,6 +739,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -794,6 +802,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -941,6 +950,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -1115,6 +1125,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -1261,6 +1272,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -1392,6 +1404,7 @@ mod web_client_tests {
                 Some(mock_os_api_factory),
                 ip,
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -1492,6 +1505,7 @@ mod web_client_tests {
                 Some(mock_os_api_factory),
                 ip,
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -1668,6 +1682,7 @@ mod web_client_tests {
                 Some(mock_os_api_factory),
                 ip,
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -1779,6 +1794,7 @@ mod web_client_tests {
                 Some(mock_os_api_factory),
                 ip,
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -1953,6 +1969,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -2137,6 +2154,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -2307,6 +2325,7 @@ mod web_client_tests {
             Some(client_os_api_factory),
             addr.ip(),
             port,
+            AclConfig::default(),
         ));
 
         wait_for_server(port, Duration::from_secs(5))
@@ -2406,6 +2425,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -2493,6 +2513,7 @@ mod web_client_tests {
                 Some(mock_os_api_factory),
                 ip,
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -2612,6 +2633,7 @@ mod web_client_tests {
                 Some(mock_os_api_factory),
                 ip,
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -2707,6 +2729,7 @@ mod web_client_tests {
                 Some(mock_os_api_factory),
                 ip,
                 port,
+                AclConfig::default(),
             )
             .await;
         });
@@ -2791,6 +2814,7 @@ mod web_client_tests {
                 Some(client_os_api_factory),
                 addr.ip(),
                 port,
+                AclConfig::default(),
             )
             .await;
         });
