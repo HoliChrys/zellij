@@ -33,6 +33,8 @@ pub mod logging; // Requires log4rs
 pub mod remote_session_tokens;
 #[cfg(not(target_family = "wasm"))]
 pub mod sessions;
+#[cfg(not(target_family = "wasm"))]
+pub mod tachikoma_acl; // Requires reqwest
 #[cfg(all(not(target_family = "wasm"), feature = "web_server_capability"))]
 pub mod web_authentication_tokens;
 #[cfg(all(not(target_family = "wasm"), feature = "web_server_capability"))]
