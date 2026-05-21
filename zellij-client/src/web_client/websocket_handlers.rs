@@ -88,52 +88,101 @@ async fn handle_ws_control(
 
     let mut set_client_control_channel = false;
 
-    while let Some(Ok(msg)) = control_socket_rx.next().await {
-        match msg {
-            Message::Text(msg) => {
-                let deserialized_msg: Result<WebClientToWebServerControlMessage, _> =
-                    serde_json::from_str(&msg);
-                match deserialized_msg {
-                    Ok(deserialized_msg) => {
-                        if !state
-                            .connection_table
-                            .lock()
-                            .unwrap()
-                            .verify_client_ownership(
-                                &deserialized_msg.web_client_id,
-                                &session_token_hash.0,
-                            )
-                        {
-                            log::error!(
-                                "Client attempted to use web_client_id {} that does not belong to their session",
-                                deserialized_msg.web_client_id
-                            );
-                            return;
+    // Phase 5 — ACL revoke listener. The writer task (send_control_messages_to_client)
+    // owns the WS sink, so we close the connection by sending a 4001 close frame
+    // through the mpsc channel and breaking the read loop.
+    let mut acl_revoke_rx = state
+        .acl_session_store
+        .as_ref()
+        .map(|s| s.subscribe_disconnect());
+    let my_session_hash = session_token_hash.0.clone();
+
+    loop {
+        tokio::select! {
+            maybe_msg = control_socket_rx.next() => {
+                let Some(Ok(msg)) = maybe_msg else {
+                    return;
+                };
+                match msg {
+                    Message::Text(msg) => {
+                        let deserialized_msg: Result<WebClientToWebServerControlMessage, _> =
+                            serde_json::from_str(&msg);
+                        match deserialized_msg {
+                            Ok(deserialized_msg) => {
+                                if !state
+                                    .connection_table
+                                    .lock()
+                                    .unwrap()
+                                    .verify_client_ownership(
+                                        &deserialized_msg.web_client_id,
+                                        &session_token_hash.0,
+                                    )
+                                {
+                                    log::error!(
+                                        "Client attempted to use web_client_id {} that does not belong to their session",
+                                        deserialized_msg.web_client_id
+                                    );
+                                    return;
+                                }
+                                if !set_client_control_channel {
+                                    set_client_control_channel = true;
+                                    state
+                                        .connection_table
+                                        .lock()
+                                        .unwrap()
+                                        .add_client_control_tx(
+                                            &deserialized_msg.web_client_id,
+                                            control_channel_tx.clone(),
+                                        );
+                                }
+                                send_message_to_server(deserialized_msg);
+                            },
+                            Err(e) => {
+                                log::error!("Failed to deserialize client msg: {:?}", e);
+                            },
                         }
-                        if !set_client_control_channel {
-                            set_client_control_channel = true;
-                            state
-                                .connection_table
-                                .lock()
-                                .unwrap()
-                                .add_client_control_tx(
-                                    &deserialized_msg.web_client_id,
-                                    control_channel_tx.clone(),
-                                );
-                        }
-                        send_message_to_server(deserialized_msg);
                     },
-                    Err(e) => {
-                        log::error!("Failed to deserialize client msg: {:?}", e);
+                    Message::Close(_) => {
+                        return;
+                    },
+                    _ => {
+                        log::error!("Unsupported messagetype : {:?}", msg);
                     },
                 }
-            },
-            Message::Close(_) => {
-                return;
-            },
-            _ => {
-                log::error!("Unsupported messagetype : {:?}", msg);
-            },
+            }
+            // Phase 5 — ACL revoke. Park forever when no ACL store is configured
+            // so the arm is inert; otherwise, on a matching event, send a 4001
+            // close frame through the writer channel and break the loop.
+            event = async {
+                if let Some(rx) = acl_revoke_rx.as_mut() {
+                    rx.recv().await
+                } else {
+                    std::future::pending().await
+                }
+            } => {
+                if let Ok(disconnect_event) = event {
+                    if disconnect_event.session_token_hash == my_session_hash {
+                        let close_frame = axum::extract::ws::CloseFrame {
+                            code: 4001u16,
+                            reason: format!(
+                                "acl_revoked: {}",
+                                disconnect_event.reason
+                            )
+                            .into(),
+                        };
+                        let _ = control_channel_tx
+                            .send(Message::Close(Some(close_frame)));
+                        log::info!(
+                            "[ws_control] closed for acl_revoke (hash={}…, reason={})",
+                            &my_session_hash[..8.min(my_session_hash.len())],
+                            disconnect_event.reason,
+                        );
+                        break;
+                    }
+                    // Event was for another session — keep looping.
+                }
+                // Err(Lagged) / Err(Closed) — keep looping.
+            }
         }
     }
 }
@@ -201,11 +250,31 @@ async fn handle_ws_terminal(
         .unwrap()
         .get_should_not_reconnect_flag(&web_client_id)
         .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
+
+    // Phase 5 — ACL revoke listener. The writer task owns the WS sink, so
+    // we hand it a subscriber + our session hash so it can write a 4001
+    // close frame with the upstream reason. The recv loop below uses its
+    // own subscriber to break out promptly.
+    let (render_acl_rx, render_hash) = match state.acl_session_store.as_ref() {
+        Some(store) => (
+            Some(store.subscribe_disconnect()),
+            Some(session_token_hash.0.clone()),
+        ),
+        None => (None, None),
+    };
+    let mut acl_revoke_rx = state
+        .acl_session_store
+        .as_ref()
+        .map(|s| s.subscribe_disconnect());
+    let my_session_hash = session_token_hash.0.clone();
+
     render_to_client(
         stdout_channel_rx,
         client_terminal_channel_tx,
         terminal_channel_cancellation_token.clone(),
         should_not_reconnect,
+        render_acl_rx,
+        render_hash,
     );
     state
         .connection_table
@@ -232,23 +301,75 @@ async fn handle_ws_terminal(
     // split across two WebSocket frames resolves on the second frame.
     let mut stdin_session = StdinSession::new(explicitly_disable_kitty_keyboard_protocol);
     let finalize_idle = std::time::Duration::from_millis(50);
+    // Sentinel for the select arm below: distinguishes "frame arrived"
+    // from "idle timeout fired" from "ACL revoke matched our session".
+    enum TermRecv {
+        Frame(Option<Result<Message, axum::Error>>),
+        IdleFinalize,
+        AclRevoked,
+    }
     loop {
         // When termwiz is holding ambiguous-but-complete events from
         // the previous frame, race the next frame against an idle
         // timeout so the held events still drain if no further frame
-        // arrives.
-        let result = if stdin_session.pending_finalize() {
+        // arrives. The ACL revoke branch always races alongside so a
+        // mark_revoked() tick breaks the loop promptly regardless of
+        // pending_finalize state.
+        let recv = if stdin_session.pending_finalize() {
             tokio::select! {
-                msg = client_terminal_channel_rx.next() => Some(msg),
-                _ = tokio::time::sleep(finalize_idle) => None,
+                msg = client_terminal_channel_rx.next() => TermRecv::Frame(msg),
+                _ = tokio::time::sleep(finalize_idle) => TermRecv::IdleFinalize,
+                event = async {
+                    if let Some(rx) = acl_revoke_rx.as_mut() {
+                        rx.recv().await
+                    } else {
+                        std::future::pending().await
+                    }
+                } => match event {
+                    Ok(ev) if ev.session_token_hash == my_session_hash => {
+                        log::info!(
+                            "[ws_terminal] closed for acl_revoke (hash={}…, reason={})",
+                            &my_session_hash[..8.min(my_session_hash.len())],
+                            ev.reason,
+                        );
+                        TermRecv::AclRevoked
+                    }
+                    _ => continue,
+                },
             }
         } else {
-            Some(client_terminal_channel_rx.next().await)
+            tokio::select! {
+                msg = client_terminal_channel_rx.next() => TermRecv::Frame(msg),
+                event = async {
+                    if let Some(rx) = acl_revoke_rx.as_mut() {
+                        rx.recv().await
+                    } else {
+                        std::future::pending().await
+                    }
+                } => match event {
+                    Ok(ev) if ev.session_token_hash == my_session_hash => {
+                        log::info!(
+                            "[ws_terminal] closed for acl_revoke (hash={}…, reason={})",
+                            &my_session_hash[..8.min(my_session_hash.len())],
+                            ev.reason,
+                        );
+                        TermRecv::AclRevoked
+                    }
+                    _ => continue,
+                },
+            }
         };
-        let msg = match result {
-            Some(Some(Ok(m))) => m,
-            Some(_) => break,
-            None => {
+        let msg = match recv {
+            TermRecv::Frame(Some(Ok(m))) => m,
+            TermRecv::Frame(_) => break,
+            TermRecv::AclRevoked => {
+                // The writer task (render_to_client) handles the actual
+                // 4001 close frame using its own broadcast subscriber;
+                // we just break out of the read loop so the server-side
+                // connection is torn down. ClientExited is sent below.
+                break;
+            }
+            TermRecv::IdleFinalize => {
                 // Idle timeout fired with `pending_finalize` set:
                 // drain any ambiguous-but-complete events termwiz held
                 // back on the previous frame.
