@@ -185,6 +185,10 @@ pub(crate) fn start_web_server(
     cert: Option<PathBuf>,
     key: Option<PathBuf>,
     startup_timeout: Option<u64>,
+    acl_api_url: Option<String>,
+    acl_required: bool,
+    acl_grace_seconds: u64,
+    acl_bridge_auth: Option<String>,
 ) {
     // TODO: move this outside of this function
     let (config, _layout, config_options, _config_without_layout, _config_options_without_layout) =
@@ -200,6 +204,12 @@ pub(crate) fn start_web_server(
                 process::exit(1);
             },
         };
+    let acl_config = zellij_client::web_client::types::AclConfig {
+        api_url: acl_api_url,
+        acl_required,
+        grace_seconds: acl_grace_seconds,
+        bridge_auth: acl_bridge_auth,
+    };
     start_web_client_impl(
         config,
         config_options,
@@ -210,6 +220,7 @@ pub(crate) fn start_web_server(
         cert,
         key,
         startup_timeout,
+        acl_config,
     );
 }
 
@@ -222,6 +233,10 @@ pub(crate) fn start_web_server(
     _cert: Option<PathBuf>,
     _key: Option<PathBuf>,
     _startup_timeout: Option<u64>,
+    _acl_api_url: Option<String>,
+    _acl_required: bool,
+    _acl_grace_seconds: u64,
+    _acl_bridge_auth: Option<String>,
 ) {
     log::error!(
         "This version of Zellij was compiled without web server support, cannot run web server!"

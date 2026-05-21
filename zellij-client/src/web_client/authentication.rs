@@ -1,5 +1,7 @@
+use crate::web_client::types::AppState;
 use crate::web_client::utils::parse_cookies;
 use axum::body::Body;
+use axum::extract::State;
 use axum::http::header::SET_COOKIE;
 use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
 use axum_extra::extract::cookie::{Cookie, SameSite};
@@ -13,7 +15,11 @@ pub struct SessionTokenHash(pub String);
 #[derive(Clone, Copy)]
 pub struct IsReadOnly(pub bool);
 
-pub async fn auth_middleware(request: Request, next: Next) -> Result<Response, StatusCode> {
+pub async fn auth_middleware(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
     let cookies = parse_cookies(&request);
 
     let session_token = match cookies.get("session_token") {
@@ -28,6 +34,16 @@ pub async fn auth_middleware(request: Request, next: Next) -> Result<Response, S
 
             // Compute session token hash for client ownership verification
             let session_token_hash = hash_token(&session_token);
+
+            // Phase 3 — refuse access immediately if the ACL store has
+            // marked this session as revoked. The cookie itself is still
+            // cryptographically valid (so we don't clear it here) but the
+            // upstream Tachikoma token is no longer authorized.
+            if let Some(store) = state.acl_session_store.as_ref() {
+                if store.is_revoked(&session_token_hash).await {
+                    return Err(StatusCode::FORBIDDEN);
+                }
+            }
 
             // Store in request extensions for downstream handlers
             let mut request = request;

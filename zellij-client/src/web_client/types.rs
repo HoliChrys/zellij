@@ -6,12 +6,26 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
 use crate::os_input_output::ClientOsApi;
+use crate::web_client::acl_session_store::AclSessionStore;
 use crate::web_client::session_management::spawn_new_session;
 use std::path::PathBuf;
 use zellij_utils::{
     input::{config::Config, options::Options},
     ipc::ClientToServerMsg,
+    tachikoma_acl::TachikomaAclClient,
 };
+
+/// Runtime configuration for Tachikoma ACL integration, populated from the
+/// `--tachikoma-*` CLI flags on the `zellij web` subcommand. When
+/// `api_url.is_none()` and `acl_required == false`, the ACL machinery is
+/// dormant and login behaves exactly as in pre-Phase-3 zellij.
+#[derive(Clone, Debug, Default)]
+pub struct AclConfig {
+    pub api_url: Option<String>,
+    pub acl_required: bool,
+    pub grace_seconds: u64,
+    pub bridge_auth: Option<String>,
+}
 
 pub trait ClientOsApiFactory: Send + Sync + std::fmt::Debug {
     fn create_client_os_api(&self) -> Result<Box<dyn ClientOsApi>, Box<dyn std::error::Error>>;
@@ -167,6 +181,11 @@ pub struct AppState {
     pub session_manager: Arc<dyn SessionManager>,
     pub client_os_api_factory: Arc<dyn ClientOsApiFactory>,
     pub is_https: bool,
+    // Tachikoma ACL state (Phase 3). When `acl_client` is `None` we skip
+    // every ACL-related branch — preserves backwards-compatible behavior.
+    pub acl_config: AclConfig,
+    pub acl_client: Option<Arc<TachikomaAclClient>>,
+    pub acl_session_store: Option<Arc<AclSessionStore>>,
 }
 
 #[derive(Serialize)]
@@ -180,10 +199,16 @@ pub struct TerminalParams {
     pub web_client_id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct LoginRequest {
     pub auth_token: String,
     pub remember_me: Option<bool>,
+    // Tachikoma ACL fields (Phase 3). Optional for backwards compatibility:
+    // when ACL is not enforced and these are absent, login behaves exactly
+    // as before.
+    pub user_token: Option<String>,
+    pub context_path: Option<String>,
+    pub session_name: Option<String>,
 }
 
 #[derive(Serialize)]

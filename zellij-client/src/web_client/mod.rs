@@ -1,5 +1,6 @@
 pub mod control_message;
 
+pub(crate) mod acl_session_store;
 pub(crate) mod authentication;
 mod connection_manager;
 mod host_query_seed;
@@ -8,7 +9,7 @@ mod ipc_listener;
 mod message_handlers;
 mod server_listener;
 mod session_management;
-mod types;
+pub mod types;
 mod utils;
 mod websocket_handlers;
 
@@ -48,10 +49,12 @@ use http_handlers::{
 };
 use ipc_listener::listen_to_web_server_instructions;
 
+use acl_session_store::AclSessionStore;
 use types::{
-    AppState, ClientOsApiFactory, ConnectionTable, RealClientOsApiFactory, RealSessionManager,
-    SessionManager,
+    AclConfig, AppState, ClientOsApiFactory, ConnectionTable, RealClientOsApiFactory,
+    RealSessionManager, SessionManager,
 };
+use zellij_utils::tachikoma_acl::TachikomaAclClient;
 use utils::should_use_https;
 use uuid::Uuid;
 use websocket_handlers::{ws_handler_control, ws_handler_terminal};
@@ -69,6 +72,7 @@ pub fn start_web_client(
     custom_server_cert: Option<PathBuf>,
     custom_server_key: Option<PathBuf>,
     startup_timeout: Option<u64>,
+    acl_config: AclConfig,
 ) {
     std::panic::set_hook({
         Box::new(move |info| {
@@ -172,6 +176,7 @@ pub fn start_web_client(
         None,
         web_server_ip,
         web_server_port,
+        acl_config,
     ));
 }
 
@@ -185,6 +190,7 @@ pub async fn serve_web_client(
     client_os_api_factory: Option<Arc<dyn ClientOsApiFactory>>,
     web_server_ip: IpAddr,
     web_server_port: u16,
+    acl_config: AclConfig,
 ) {
     let Some(config_file_path) = config_file_path.or_else(|| Config::default_config_file_path())
     else {
@@ -208,6 +214,22 @@ pub async fn serve_web_client(
         .collect();
 
     let is_https = rustls_config.is_some();
+
+    // Instantiate the Tachikoma ACL client + session store iff an API URL
+    // has been provided on the CLI. When both are `None` the web server
+    // behaves exactly as before Phase 3.
+    let acl_client = acl_config.api_url.as_ref().map(|url| {
+        Arc::new(TachikomaAclClient::new(
+            url.clone(),
+            acl_config.bridge_auth.clone(),
+        ))
+    });
+    let acl_session_store = if acl_client.is_some() {
+        Some(AclSessionStore::new())
+    } else {
+        None
+    };
+
     let state = AppState {
         connection_table: connection_table.clone(),
         config: Arc::new(Mutex::new(config)),
@@ -216,6 +238,9 @@ pub async fn serve_web_client(
         session_manager,
         client_os_api_factory,
         is_https,
+        acl_config,
+        acl_client,
+        acl_session_store,
     };
 
     tokio::spawn({
@@ -237,7 +262,10 @@ pub async fn serve_web_client(
         .route("/ws/terminal", any(ws_handler_terminal))
         .route("/ws/terminal/{session}", any(ws_handler_terminal))
         .route("/session", post(create_new_client))
-        .route_layer(middleware::from_fn(auth_middleware))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ))
         .route("/", get(serve_html))
         .route("/{session}", get(serve_html))
         .route("/assets/{*path}", get(get_static_asset))

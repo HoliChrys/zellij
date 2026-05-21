@@ -1,3 +1,4 @@
+use crate::web_client::acl_session_store::AclSessionInfo;
 use crate::web_client::authentication::{IsReadOnly, SessionTokenHash};
 use crate::web_client::types::{AppState, CreateClientIdResponse, LoginRequest, LoginResponse};
 use crate::web_client::utils::{get_mime_type, parse_cookies};
@@ -9,8 +10,12 @@ use axum::{
 };
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use include_dir;
+use std::time::Instant;
 use uuid::Uuid;
-use zellij_utils::{consts::VERSION, web_authentication_tokens::create_session_token};
+use zellij_utils::{
+    consts::VERSION,
+    web_authentication_tokens::{create_session_token, hash_token},
+};
 
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -55,11 +60,101 @@ pub async fn login_handler(
     State(state): State<AppState>,
     Json(login_request): Json<LoginRequest>,
 ) -> impl IntoResponse {
+    // Phase 3 (Tachikoma ACL) — short-circuit: when ACL is enforced but the
+    // request omits the user_token, reject before touching any state.
+    if state.acl_config.acl_required && login_request.user_token.is_none() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(LoginResponse {
+                success: false,
+                message: "user_token required when ACL is enforced".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // Phase 3 — verify the user_token against Tachikoma. Three outcomes:
+    //  * client missing or user_token absent  -> ACL is dormant, behave as
+    //    pre-Phase-3.
+    //  * verify_token returns valid=false      -> 403 with the upstream reason.
+    //  * verify_token returns a transport err  -> 503 if ACL is required,
+    //    else fall back to legacy auth.
+    let (acl_user_id, acl_user_token_for_store) = match (
+        state.acl_client.as_ref(),
+        login_request.user_token.as_deref(),
+    ) {
+        (Some(client), Some(user_token)) => {
+            match client
+                .verify_token(
+                    user_token,
+                    login_request.context_path.as_deref(),
+                    login_request.session_name.as_deref(),
+                    "attach",
+                )
+                .await
+            {
+                Ok(resp) if resp.valid => (resp.user_id.clone(), Some(user_token.to_string())),
+                Ok(resp) => {
+                    return (
+                        StatusCode::FORBIDDEN,
+                        Json(LoginResponse {
+                            success: false,
+                            message: format!(
+                                "acl_denied: {}",
+                                resp.reason.unwrap_or_else(|| "unknown".to_string())
+                            ),
+                        }),
+                    )
+                        .into_response();
+                },
+                Err(e) => {
+                    log::warn!("ACL verify error during login: {e}");
+                    if state.acl_config.acl_required {
+                        return (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            Json(LoginResponse {
+                                success: false,
+                                message: "tachikoma_unreachable".to_string(),
+                            }),
+                        )
+                            .into_response();
+                    }
+                    (None, None)
+                },
+            }
+        },
+        _ => (None, None),
+    };
+
     match create_session_token(
         &login_request.auth_token,
         login_request.remember_me.unwrap_or(false),
     ) {
         Ok(session_token) => {
+            // Phase 3 — register the new session in the ACL store so the
+            // Phase 4 revalidator can poll it and the Phase 5 WS handlers
+            // can close on revoke.
+            if let (Some(store), Some(user_token)) = (
+                state.acl_session_store.as_ref(),
+                acl_user_token_for_store.as_ref(),
+            ) {
+                let hash = hash_token(&session_token);
+                store
+                    .register(
+                        hash,
+                        AclSessionInfo {
+                            user_token: user_token.clone(),
+                            context_path: login_request.context_path.clone(),
+                            session_name: login_request.session_name.clone(),
+                            user_id: acl_user_id.clone(),
+                            last_verified_at: Instant::now(),
+                            revoked: false,
+                            revoke_reason: None,
+                        },
+                    )
+                    .await;
+            }
+
             let is_https = state.is_https;
             let cookie = if login_request.remember_me.unwrap_or(false) {
                 // Persistent cookie for remember_me

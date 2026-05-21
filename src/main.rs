@@ -305,6 +305,10 @@ fn main() {
                 web_opts.cert.clone(),
                 web_opts.key.clone(),
                 web_opts.server_startup_timeout,
+                web_opts.tachikoma_api_url.clone(),
+                web_opts.tachikoma_acl_required,
+                web_opts.tachikoma_acl_grace_seconds,
+                web_opts.tachikoma_bridge_auth.clone(),
             );
         } else if web_opts.stop {
             match commands::stop_web_server() {
