@@ -1,5 +1,6 @@
 pub mod control_message;
 
+pub(crate) mod acl_revalidator;
 pub(crate) mod acl_session_store;
 pub(crate) mod authentication;
 mod connection_manager;
@@ -242,6 +243,29 @@ pub async fn serve_web_client(
         acl_client,
         acl_session_store,
     };
+
+    // Phase 4 : spawn the ACL revalidator background task as soon as both
+    // the API client and the session store are present. The task polls the
+    // Tachikoma API every `interval_secs` and revokes sessions whose
+    // `user_token` is no longer valid (or whose backing API has been
+    // unreachable past `grace_secs`). Phase 5 will pick up the
+    // DisconnectEvent broadcasts emitted by `mark_revoked`.
+    if let (Some(client), Some(store)) =
+        (state.acl_client.clone(), state.acl_session_store.clone())
+    {
+        let interval_secs = 10u64; // hardcoded for now ; could be CLI-flagged later
+        let grace_secs = state.acl_config.grace_seconds.max(1);
+        let _handle = crate::web_client::acl_revalidator::AclRevalidator::new(
+            client,
+            store,
+            interval_secs,
+            grace_secs,
+        )
+        .spawn();
+        log::info!(
+            "ACL revalidator started (poll={interval_secs}s, grace={grace_secs}s)"
+        );
+    }
 
     tokio::spawn({
         let server_handle = server_handle.clone();
