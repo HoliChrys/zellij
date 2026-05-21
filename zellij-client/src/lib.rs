@@ -629,6 +629,9 @@ pub fn start_remote_client(
     forget: bool,
     ca_cert: Option<std::path::PathBuf>,
     insecure: bool,
+    user_token: Option<String>,
+    user_context: Option<String>,
+    user_session: Option<String>,
     async_worker_tasks: Option<usize>,
 ) -> Result<Option<ConnectToSession>, RemoteClientError> {
     info!("Starting Zellij client!");
@@ -644,6 +647,9 @@ pub fn start_remote_client(
         forget,
         ca_cert.as_deref(),
         insecure,
+        user_token,
+        user_context,
+        user_session,
     )?;
 
     let reconnect_to_session = None;

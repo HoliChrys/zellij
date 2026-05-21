@@ -368,6 +368,21 @@ pub enum Sessions {
         /// Skip TLS certificate validation (DANGEROUS — development only)
         #[clap(long, value_parser)]
         insecure: bool,
+
+        /// Tachikoma ACL user token. Validated live by the web server against
+        /// the Tachikoma verify-acl-token endpoint. Required when the server
+        /// enforces ACL.
+        #[clap(long, value_parser, env = "TACHIKOMA_USER_TOKEN", value_name = "TOKEN")]
+        user_token: Option<String>,
+
+        /// Tachikoma context path (e.g., "tachikoma.parallele.vscode"). Used
+        /// to scope the ACL check.
+        #[clap(long, value_parser, env = "TACHIKOMA_CONTEXT_PATH", value_name = "CTX")]
+        user_context: Option<String>,
+
+        /// Zellij session name on the target. Used to scope the ACL check.
+        #[clap(long, value_parser, value_name = "NAME")]
+        user_session: Option<String>,
     },
 
     /// Watch a session (read-only)

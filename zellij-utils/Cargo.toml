@@ -44,7 +44,7 @@ libc = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7", default-features = false, features = ["compat", "io"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 log4rs = { version = "1.2.0", default-features = false, features = ["pattern_encoder", "rolling_file_appender", "compound_policy", "fixed_window_roller", "size_trigger"] }
 interprocess = { workspace = true }
 openssl-sys = { version = "0.9.93", default-features = false, features = ["vendored"], optional = true }
@@ -71,6 +71,7 @@ dunce = "1.0"
 [dev-dependencies]
 insta = { version = "1.6.0", features = ["backtrace"] }
 expect-test = "1.4.1"
+wiremock = "0.5"
 
 [features]
 # If this feature is NOT set (default):
