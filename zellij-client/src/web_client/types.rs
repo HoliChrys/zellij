@@ -209,6 +209,13 @@ pub struct LoginRequest {
     pub user_token: Option<String>,
     pub context_path: Option<String>,
     pub session_name: Option<String>,
+    /// `--admin-as-user` / `-aau` flag from the CLI. When `true`, the
+    /// server forwards `force_non_admin: true` to Tachikoma so the admin
+    /// bypass is suppressed and the admin is treated as a regular user.
+    /// Lets an admin validate the per-context / per-session ACL flow
+    /// without logging out and back in as a non-admin.
+    #[serde(default)]
+    pub admin_as_user: bool,
 }
 
 #[derive(Serialize)]

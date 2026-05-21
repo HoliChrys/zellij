@@ -19,6 +19,11 @@ pub struct VerifyRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_name: Option<&'a str>,
     pub action: &'a str,
+    /// When `true`, suppress the admin bypass on the Tachikoma side and
+    /// treat an admin user as a regular user. Used by `--admin-as-user`
+    /// to exercise the ACL flow from a privileged account.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub force_non_admin: bool,
 }
 
 /// Parsed response from the Tachikoma ACL endpoint.

@@ -632,6 +632,7 @@ pub fn start_remote_client(
     user_token: Option<String>,
     user_context: Option<String>,
     user_session: Option<String>,
+    admin_as_user: bool,
     async_worker_tasks: Option<usize>,
 ) -> Result<Option<ConnectToSession>, RemoteClientError> {
     info!("Starting Zellij client!");
@@ -650,6 +651,7 @@ pub fn start_remote_client(
         user_token,
         user_context,
         user_session,
+        admin_as_user,
     )?;
 
     let reconnect_to_session = None;

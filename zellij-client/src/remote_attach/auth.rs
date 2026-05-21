@@ -16,6 +16,9 @@ struct LoginRequest {
     context_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     session_name: Option<String>,
+    // `--admin-as-user` / `-aau` — suppress admin bypass server-side.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    admin_as_user: bool,
 }
 
 #[derive(Deserialize)]
@@ -32,6 +35,7 @@ pub async fn authenticate(
     user_token: Option<String>,
     user_context: Option<String>,
     user_session: Option<String>,
+    admin_as_user: bool,
 ) -> Result<(String, HttpClientWithCookies, Option<String>), RemoteClientError> {
     let http_client = HttpClientWithCookies::new(ca_cert, insecure)
         .map_err(|e| RemoteClientError::Other(Box::new(e)))?;
@@ -45,6 +49,7 @@ pub async fn authenticate(
         user_token,
         context_path: user_context,
         session_name: user_session,
+        admin_as_user,
     };
 
     let response = http_client

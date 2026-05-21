@@ -43,6 +43,7 @@ pub fn attach_to_remote_session(
     user_token: Option<String>,
     user_context: Option<String>,
     user_session: Option<String>,
+    admin_as_user: bool,
 ) -> Result<WebSocketConnections, RemoteClientError> {
     // Extract server URL for token management
     let server_url = extract_server_url(remote_session_url)?;
@@ -80,6 +81,7 @@ pub fn attach_to_remote_session(
         user_token,
         user_context,
         user_session,
+        admin_as_user,
     )
 }
 
@@ -131,6 +133,7 @@ fn authenticate_with_retry(
     user_token: Option<String>,
     user_context: Option<String>,
     user_session: Option<String>,
+    admin_as_user: bool,
 ) -> Result<WebSocketConnections, RemoteClientError> {
     use dialoguer::{Confirm, Password};
 
@@ -162,6 +165,7 @@ fn authenticate_with_retry(
                 user_token_clone,
                 user_context_clone,
                 user_session_clone,
+                admin_as_user,
             )
             .await
         }) {
@@ -217,6 +221,7 @@ async fn remote_attach(
     user_token: Option<String>,
     user_context: Option<String>,
     user_session: Option<String>,
+    admin_as_user: bool,
 ) -> Result<(websockets::WebSocketConnections, Option<String>), RemoteClientError> {
     let server_base_url = extract_server_url(server_url)?;
     let session_name = extract_session_name(server_url)?;
@@ -229,6 +234,7 @@ async fn remote_attach(
         user_token,
         user_context,
         user_session,
+        admin_as_user,
     )
     .await?;
     let connections = websockets::establish_websocket_connections(

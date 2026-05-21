@@ -748,6 +748,7 @@ pub(crate) fn start_client(opts: CliArgs) {
                     user_token: None,
                     user_context: None,
                     user_session: None,
+                    admin_as_user: false,
                 }));
             } else {
                 opts.command = None;
@@ -785,6 +786,7 @@ pub(crate) fn start_client(opts: CliArgs) {
             user_token,
             user_context,
             user_session,
+            admin_as_user,
         })) = opts.command.clone()
         {
             if let Some(remote_session_url) = session_name.as_ref().and_then(|s| {
@@ -816,6 +818,7 @@ pub(crate) fn start_client(opts: CliArgs) {
                     user_token,
                     user_context,
                     user_session,
+                    admin_as_user,
                     config_options.client_async_worker_tasks,
                 ) {
                     eprintln!("{}", e);

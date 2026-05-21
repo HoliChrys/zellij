@@ -72,7 +72,23 @@ impl TachikomaAclClient {
         session_name: Option<&str>,
         action: &str,
     ) -> Result<VerifyResponse, AclError> {
-        self.verify_with_cache(token, context_path, session_name, action)
+        self.verify_with_cache(token, context_path, session_name, action, false)
+            .await
+    }
+
+    /// Same as [`verify_token`] but with the `force_non_admin` flag exposed.
+    /// Used by `login_handler` when the CLI passed `--admin-as-user` so an
+    /// admin can exercise the non-admin ACL path. Cached separately because
+    /// the result is genuinely different.
+    pub async fn verify_token_with(
+        &self,
+        token: &str,
+        context_path: Option<&str>,
+        session_name: Option<&str>,
+        action: &str,
+        force_non_admin: bool,
+    ) -> Result<VerifyResponse, AclError> {
+        self.verify_with_cache(token, context_path, session_name, action, force_non_admin)
             .await
     }
 
@@ -82,13 +98,22 @@ impl TachikomaAclClient {
         context_path: Option<&str>,
         session_name: Option<&str>,
         action: &str,
+        force_non_admin: bool,
     ) -> Result<VerifyResponse, AclError> {
-        let key = TtlLru::key(token, context_path, session_name, action);
+        // Fold force_non_admin into the cache key so the two variants don't
+        // alias. Appending a `_aau` suffix when set is sufficient — collisions
+        // with literal action strings are caller-side concerns.
+        let action_for_key = if force_non_admin {
+            format!("{action}_aau")
+        } else {
+            action.to_string()
+        };
+        let key = TtlLru::key(token, context_path, session_name, &action_for_key);
         if let Some(cached) = self.cache.get(key) {
             return Ok(cached);
         }
         let resp = self
-            .verify_http(token, context_path, session_name, action)
+            .verify_http(token, context_path, session_name, action, force_non_admin)
             .await?;
         self.cache.insert(key, resp.clone());
         Ok(resp)
@@ -105,7 +130,7 @@ impl TachikomaAclClient {
         session_name: Option<&str>,
         action: &str,
     ) -> Result<VerifyResponse, AclError> {
-        self.verify_http(token, context_path, session_name, action)
+        self.verify_http(token, context_path, session_name, action, false)
             .await
     }
 
@@ -115,6 +140,7 @@ impl TachikomaAclClient {
         context_path: Option<&str>,
         session_name: Option<&str>,
         action: &str,
+        force_non_admin: bool,
     ) -> Result<VerifyResponse, AclError> {
         let url = format!("{}{}", self.base_url, VERIFY_PATH);
         let body = VerifyRequest {
@@ -122,6 +148,7 @@ impl TachikomaAclClient {
             context_path,
             session_name,
             action,
+            force_non_admin,
         };
         let mut req = self.http.post(&url).json(&body);
         if let Some(secret) = self.bridge_auth.as_deref() {

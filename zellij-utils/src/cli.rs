@@ -383,6 +383,15 @@ pub enum Sessions {
         /// Zellij session name on the target. Used to scope the ACL check.
         #[clap(long, value_parser, value_name = "NAME")]
         user_session: Option<String>,
+
+        /// Admin-as-user. When the caller is an admin, suppress the
+        /// Tachikoma admin bypass so the per-context / per-session ACL
+        /// check applies as if the caller were a regular user. Lets an
+        /// admin validate the ACL flow end-to-end from a privileged
+        /// account.
+        #[clap(long = "admin-as-user", alias = "aau",
+               value_parser, default_value_t = false)]
+        admin_as_user: bool,
     },
 
     /// Watch a session (read-only)

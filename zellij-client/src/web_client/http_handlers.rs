@@ -85,11 +85,12 @@ pub async fn login_handler(
     ) {
         (Some(client), Some(user_token)) => {
             match client
-                .verify_token(
+                .verify_token_with(
                     user_token,
                     login_request.context_path.as_deref(),
                     login_request.session_name.as_deref(),
                     "attach",
+                    login_request.admin_as_user,
                 )
                 .await
             {
