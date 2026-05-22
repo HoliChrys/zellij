@@ -168,20 +168,43 @@ pub fn create_token(name: Option<String>, read_only: bool) -> Result<(String, St
 
 pub fn create_session_token(auth_token: &str, remember_me: bool) -> Result<String> {
     let conn = open_db()?;
-
     cleanup_expired_sessions()?;
-
     let auth_token_hash = hash_token(auth_token);
-
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM tokens WHERE token_hash = ?1",
         [&auth_token_hash],
         |row| row.get(0),
     )?;
-
     if count == 0 {
         return Err(TokenError::InvalidToken);
     }
+    drop(conn);
+    create_session_token_inner(&auth_token_hash, remember_me)
+}
+
+/// Create a session_token for a request that was authenticated *exclusively*
+/// via Tachikoma ACL (no zweb auth_token presented). The session row carries
+/// a synthetic `acl:<user_id>` auth_token_hash. To satisfy the
+/// session_tokens.auth_token_hash → tokens.token_hash foreign key, we first
+/// idempotently insert a placeholder tokens row with the same synthetic
+/// hash and name `acl:<user_id>`. The placeholder is read-write (ACL
+/// permissions actually live in Tachikoma, not in zellij's SQLite).
+pub fn create_session_token_acl(user_id: &str, remember_me: bool) -> Result<String> {
+    let pseudo_auth = format!("acl:{}", user_id);
+    let pseudo_auth_hash = hash_token(&pseudo_auth);
+    let conn = open_db()?;
+    // INSERT OR IGNORE — safe to call repeatedly for the same user.
+    conn.execute(
+        "INSERT OR IGNORE INTO tokens (token_hash, name, read_only) VALUES (?1, ?2, 0)",
+        [&pseudo_auth_hash, &pseudo_auth],
+    )?;
+    drop(conn);
+    create_session_token_inner(&pseudo_auth_hash, remember_me)
+}
+
+fn create_session_token_inner(auth_token_hash: &str, remember_me: bool) -> Result<String> {
+    let conn = open_db()?;
+    cleanup_expired_sessions()?;
 
     let session_token = Uuid::new_v4().to_string();
     let session_token_hash = hash_token(&session_token);
@@ -197,6 +220,7 @@ pub fn create_session_token(auth_token: &str, remember_me: bool) -> Result<Strin
     } else {
         // For session-only: very short expiration (e.g., 5 minutes)
         // The browser will handle the session aspect via cookie expiration
+        use std::time::{SystemTime, UNIX_EPOCH};
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -207,7 +231,7 @@ pub fn create_session_token(auth_token: &str, remember_me: bool) -> Result<Strin
 
     conn.execute(
         &format!("INSERT INTO session_tokens (session_token_hash, auth_token_hash, remember_me, expires_at) VALUES (?1, ?2, ?3, {})", expires_at),
-        [&session_token_hash, &auth_token_hash, &(remember_me as i64).to_string()],
+        [&session_token_hash, &auth_token_hash.to_string(), &(remember_me as i64).to_string()],
     )?;
 
     Ok(session_token)

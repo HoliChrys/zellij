@@ -45,6 +45,17 @@ pub fn attach_to_remote_session(
     user_session: Option<String>,
     admin_as_user: bool,
 ) -> Result<WebSocketConnections, RemoteClientError> {
+    // Phase 6/AAU UX — extract Tachikoma ACL fields from the URL query
+    // string when the caller didn't pass them as CLI flags. Lets users do :
+    //   zellij attach 'https://.../sess?user_token=…&context_path=…&session_name=…'
+    // without remembering all 3 flags. Explicit --user-* still wins.
+    let (url_user_token, url_user_context, url_user_session, url_admin_as_user) =
+        extract_url_acl_params(remote_session_url);
+    let user_token = user_token.or(url_user_token);
+    let user_context = user_context.or(url_user_context);
+    let user_session = user_session.or(url_user_session);
+    let admin_as_user = admin_as_user || url_admin_as_user;
+
     // Extract server URL for token management
     let server_url = extract_server_url(remote_session_url)?;
 
@@ -145,6 +156,14 @@ fn authenticate_with_retry(
 
         let auth_token = match &current_token {
             Some(t) => t.clone(),
+            None if user_token.is_some() => {
+                // Phase 6/AAU UX — when the caller has a valid Tachikoma
+                // user_token, the zweb auth_token is redundant. The server
+                // (login_handler) routes through create_session_token_acl
+                // and skips the SQLite zweb-token check entirely when
+                // auth_token is empty. No prompt, no second credential.
+                String::new()
+            },
             None => Password::new()
                 .with_prompt("Enter authentication token")
                 .interact()
@@ -271,6 +290,34 @@ async fn remote_attach_with_session_token(
     .await
     .map_err(|e| RemoteClientError::ConnectionFailed(e.to_string()))?;
     Ok(connections)
+}
+
+/// Extract Tachikoma ACL fields from the URL query string :
+/// `?user_token=…&context_path=…&session_name=…&admin_as_user=true`
+/// Returns (user_token, context_path, session_name, admin_as_user). Any
+/// missing param comes back as None / false. Malformed URLs return all
+/// defaults — never panics.
+pub fn extract_url_acl_params(
+    full_url: &str,
+) -> (Option<String>, Option<String>, Option<String>, bool) {
+    let parsed = match url::Url::parse(full_url) {
+        Ok(u) => u,
+        Err(_) => return (None, None, None, false),
+    };
+    let mut user_token = None;
+    let mut context_path = None;
+    let mut session_name = None;
+    let mut admin_as_user = false;
+    for (k, v) in parsed.query_pairs() {
+        match k.as_ref() {
+            "user_token" if !v.is_empty() => user_token = Some(v.into_owned()),
+            "context_path" if !v.is_empty() => context_path = Some(v.into_owned()),
+            "session_name" if !v.is_empty() => session_name = Some(v.into_owned()),
+            "admin_as_user" => admin_as_user = matches!(v.as_ref(), "true" | "1" | "yes"),
+            _ => {}
+        }
+    }
+    (user_token, context_path, session_name, admin_as_user)
 }
 
 pub fn extract_server_url(full_url: &str) -> Result<String, RemoteClientError> {

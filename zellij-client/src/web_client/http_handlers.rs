@@ -14,7 +14,7 @@ use std::time::Instant;
 use uuid::Uuid;
 use zellij_utils::{
     consts::VERSION,
-    web_authentication_tokens::{create_session_token, hash_token},
+    web_authentication_tokens::{create_session_token, create_session_token_acl, hash_token},
 };
 
 fn html_escape(s: &str) -> String {
@@ -127,10 +127,24 @@ pub async fn login_handler(
         _ => (None, None),
     };
 
-    match create_session_token(
-        &login_request.auth_token,
-        login_request.remember_me.unwrap_or(false),
-    ) {
+    // Choose the session_token creation path :
+    //   - ACL-only login (auth_token empty AND acl_user_id populated) →
+    //     skip the SQLite zweb-token check and create the session via
+    //     create_session_token_acl. This is the user_token-only flow.
+    //   - All other cases → legacy create_session_token (requires the
+    //     zweb auth_token to exist in the SQLite tokens table).
+    let session_token_result = if login_request.auth_token.is_empty()
+        && acl_user_id.is_some()
+    {
+        let uid = acl_user_id.clone().unwrap_or_else(|| "anonymous".to_string());
+        create_session_token_acl(&uid, login_request.remember_me.unwrap_or(false))
+    } else {
+        create_session_token(
+            &login_request.auth_token,
+            login_request.remember_me.unwrap_or(false),
+        )
+    };
+    match session_token_result {
         Ok(session_token) => {
             // Phase 3 — register the new session in the ACL store so the
             // Phase 4 revalidator can poll it and the Phase 5 WS handlers
