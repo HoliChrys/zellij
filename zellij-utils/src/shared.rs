@@ -25,10 +25,66 @@ mod unix_only {
         permissions.set_mode(mode);
         fs::set_permissions(path, permissions)
     }
+
+    /// ACL-fork variant : ``set_permissions`` that
+    ///
+    ///  1. **swallows PermissionDenied** — at every site where zellij
+    ///     "defensively" chmod's a socket dir/file it didn't create,
+    ///     the cross-uid caller (admin in the tachikoma bridge model)
+    ///     used to panic. We accept the failure and continue ; the
+    ///     dir's group/ACL still enforces real access.
+    ///
+    ///  2. **leaves shared directories alone** — if the path is a
+    ///     dir whose current mode has the **setgid bit set AND no
+    ///     "other" rwx bits**, that's the wrapper-installed signal
+    ///     "this dir is intentionally shared with the
+    ///     ``tachi-<ctx>`` group, do not downgrade". Without this
+    ///     check, the agent's own ``zellij --server`` (running as
+    ///     ``claude-X``, owner of the dir) keeps chmod'ing the dir
+    ///     back to 0700 between calls — breaking subsequent admin
+    ///     attaches every time a new agent session starts.
+    ///
+    /// Real I/O errors (NotFound, ENOSPC, etc.) propagate normally.
+    pub fn set_permissions_tolerant(path: &Path, mode: u32) -> io::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(path) {
+            if meta.file_type().is_dir() {
+                let cur = meta.permissions().mode() & 0o7777;
+                // setgid set + no perms for "other" → shared dir
+                // intentionally configured by the wrapper. Trust it.
+                if (cur & 0o2000) != 0 && (cur & 0o007) == 0 {
+                    log::debug!(
+                        "set_permissions({:o}) on {:?} : current mode \
+                         {:o} is a shared dir (setgid+no-other), \
+                         preserving",
+                        mode, path, cur
+                    );
+                    return Ok(());
+                }
+            }
+        }
+        match set_permissions(path, mode) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                log::debug!(
+                    "set_permissions({:o}) on {:?} → EPERM ; assuming \
+                     ACL-fork cross-uid caller, continuing",
+                    mode, path
+                );
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
 }
 
 #[cfg(not(unix))]
 pub fn set_permissions(_path: &std::path::Path, _mode: u32) -> std::io::Result<()> {
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn set_permissions_tolerant(_path: &std::path::Path, _mode: u32) -> std::io::Result<()> {
     Ok(())
 }
 
