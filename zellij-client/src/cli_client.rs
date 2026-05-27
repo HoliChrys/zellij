@@ -24,7 +24,7 @@ pub fn start_cli_client(
     let zellij_ipc_pipe: PathBuf = {
         let mut sock_dir = zellij_utils::consts::ZELLIJ_SOCK_DIR.clone();
         fs::create_dir_all(&sock_dir).unwrap();
-        zellij_utils::shared::set_permissions(&sock_dir, 0o700).unwrap();
+        zellij_utils::shared::set_permissions_tolerant(&sock_dir, 0o700).unwrap();
         sock_dir.push(session_name);
         sock_dir
     };
@@ -261,7 +261,7 @@ pub fn start_subscribe_client(
     let zellij_ipc_pipe: PathBuf = {
         let mut sock_dir = zellij_utils::consts::ZELLIJ_SOCK_DIR.clone();
         fs::create_dir_all(&sock_dir).unwrap();
-        zellij_utils::shared::set_permissions(&sock_dir, 0o700).unwrap();
+        zellij_utils::shared::set_permissions_tolerant(&sock_dir, 0o700).unwrap();
         sock_dir.push(session_name);
         sock_dir
     };

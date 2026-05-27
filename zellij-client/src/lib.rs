@@ -151,7 +151,7 @@ use crate::{
 use zellij_utils::cli::CliArgs;
 use zellij_utils::{
     channels::{self, ChannelWithContext, SenderWithContext},
-    consts::{set_permissions, ZELLIJ_SOCK_DIR},
+    consts::{set_permissions, set_permissions_tolerant, ZELLIJ_SOCK_DIR},
     data::{ClientId, ConnectToSession, KeyWithModifier, LayoutInfo, LayoutMetadata},
     envs,
     errors::{ClientContext, ContextType, ErrorInstruction},
@@ -789,7 +789,7 @@ pub fn start_client(
     let create_ipc_pipe = || -> std::path::PathBuf {
         let mut sock_dir = ZELLIJ_SOCK_DIR.clone();
         std::fs::create_dir_all(&sock_dir).unwrap();
-        set_permissions(&sock_dir, 0o700).unwrap();
+        set_permissions_tolerant(&sock_dir, 0o700).unwrap();
         sock_dir.push(envs::get_session_name().unwrap());
         check_ipc_pipe_length(&sock_dir);
         sock_dir
@@ -1304,7 +1304,7 @@ pub fn start_server_detached(
     let create_ipc_pipe = || -> std::path::PathBuf {
         let mut sock_dir = ZELLIJ_SOCK_DIR.clone();
         std::fs::create_dir_all(&sock_dir).unwrap();
-        set_permissions(&sock_dir, 0o700).unwrap();
+        set_permissions_tolerant(&sock_dir, 0o700).unwrap();
         sock_dir.push(envs::get_session_name().unwrap());
         check_ipc_pipe_length(&sock_dir);
         sock_dir

@@ -292,7 +292,7 @@ pub use unix_only::*;
 mod unix_only {
     use super::*;
     use crate::envs;
-    pub use crate::shared::set_permissions;
+    pub use crate::shared::{set_permissions, set_permissions_tolerant};
     use lazy_static::lazy_static;
     use nix::unistd::Uid;
     use std::env::temp_dir;
@@ -336,7 +336,7 @@ pub use not_unix::*;
 mod not_unix {
     use super::*;
     use crate::envs;
-    pub use crate::shared::set_permissions;
+    pub use crate::shared::{set_permissions, set_permissions_tolerant};
     #[cfg(windows)]
     use dunce;
     use lazy_static::lazy_static;
