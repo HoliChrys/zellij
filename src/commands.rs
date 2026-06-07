@@ -634,6 +634,33 @@ fn attach_with_session_index(config_options: Options, index: usize, create: bool
     }
 }
 
+// tachikoma: the per-ctx zellij socket dir's POSIX ACL mask transiently
+// collapses to `---` right after a session is created (zellij chmods the
+// contract dir to 0700), so an operator-side `attach` can race the
+// claude-spawn watcher that restores the mask and get `PermissionDenied`
+// from `read_dir`. Retry briefly (the watcher restores access within ~1-2s)
+// instead of `.unwrap()`-panicking the whole client; exit cleanly on a
+// persistent denial rather than crashing.
+fn resolve_perm_retry<T>(
+    mut f: impl FnMut() -> Result<T, std::io::ErrorKind>,
+    what: &str,
+) -> T {
+    let mut attempts: u32 = 0;
+    loop {
+        match f() {
+            Ok(v) => return v,
+            Err(std::io::ErrorKind::PermissionDenied) if attempts < 25 => {
+                attempts += 1;
+                std::thread::sleep(Duration::from_millis(200));
+            },
+            Err(e) => {
+                eprintln!("Error ({}): {:?}", what, e);
+                process::exit(1);
+            },
+        }
+    }
+}
+
 fn attach_with_session_name(
     session_name: Option<String>,
     config_options: Options,
@@ -641,13 +668,13 @@ fn attach_with_session_name(
 ) -> ClientInfo {
     match &session_name {
         Some(session) if create => {
-            if session_exists(session).unwrap() {
+            if resolve_perm_retry(|| session_exists(session), "session existence check") {
                 ClientInfo::Attach(session_name.unwrap(), config_options)
             } else {
                 ClientInfo::New(session_name.unwrap(), None, None)
             }
         },
-        Some(prefix) => match match_session_name(prefix).unwrap() {
+        Some(prefix) => match resolve_perm_retry(|| match_session_name(prefix), "session name match") {
             SessionNameMatch::UniquePrefix(s) | SessionNameMatch::Exact(s) => {
                 ClientInfo::Attach(s, config_options)
             },
@@ -1048,7 +1075,7 @@ pub(crate) fn watch_session(session_name: Option<String>, opts: CliArgs) {
 
     // Resolve the session name to watch
     let client_info = match &session_name {
-        Some(prefix) => match match_session_name(prefix).unwrap() {
+        Some(prefix) => match resolve_perm_retry(|| match_session_name(prefix), "session name match") {
             SessionNameMatch::UniquePrefix(s) | SessionNameMatch::Exact(s) => {
                 ClientInfo::Watch(s, config_options.clone())
             },
