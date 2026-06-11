@@ -303,6 +303,18 @@ pub(crate) fn background_jobs_main(
                 runtime.spawn({
                     let senders = bus.senders.clone();
                     async move {
+                        // Guard against an EMPTY program. A misconfigured plugin
+                        // (e.g. a zjstatus `{command_X}` token whose
+                        // `command_X_command` def was dropped) issues run_command
+                        // with an empty command. `Command::new("")` fails ENOENT;
+                        // sending that error back re-renders the plugin, which
+                        // re-issues immediately → unthrottled plugin-exec spin +
+                        // ENOENT log storm + render starvation (the
+                        // personal-server "freeze"). Drop empty commands: no
+                        // spawn, no result, so nothing re-triggers the loop.
+                        if command.trim().is_empty() {
+                            return;
+                        }
                         let output = tokio::process::Command::new(&command)
                             .args(&args)
                             .envs(env_variables)
